@@ -59,4 +59,8 @@ app.put("/api/game",auth,(req,res)=>{
   res.json({ok:true});
 });
 
-app.listen(3001,()=>console.log("Credit Empire API listening on http://localhost:3001"));
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Credit Empire API listening on port ${PORT}`);
+});
