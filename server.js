@@ -62,11 +62,16 @@ app.put("/api/game",auth,(req,res)=>{
   db.prepare("UPDATE users SET game_json=? WHERE id=?").run(JSON.stringify(req.body.game),req.user.id);
   res.json({ok:true});
 });
-app.get("*", (req, res) => {
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    return next();
+  }
+
   res.sendFile(path.join(distPath, "index.html"));
 });
-const PORT = process.env.PORT || 3001;
 
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Credit Empire API listening on port ${PORT}`);
 });
