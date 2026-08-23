@@ -15,6 +15,10 @@ const app=express();
 app.use(cors());
 app.use(express.json({limit:"1mb"}));
 
+const distPath = path.join(root, "dist");
+
+app.use(express.static(distPath));
+
 db.exec(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -58,7 +62,9 @@ app.put("/api/game",auth,(req,res)=>{
   db.prepare("UPDATE users SET game_json=? WHERE id=?").run(JSON.stringify(req.body.game),req.user.id);
   res.json({ok:true});
 });
-
+app.get("*", (req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
+});
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, "0.0.0.0", () => {
