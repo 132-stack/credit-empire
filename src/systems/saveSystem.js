@@ -11,3 +11,4 @@ export async function register(username,password){const data=await request("/api
 export async function login(username,password){const data=await request("/api/auth/login",{method:"POST",body:JSON.stringify({username,password})});localStorage.setItem(TOKEN_KEY,data.token);localStorage.setItem("credit_empire_user",JSON.stringify(data.user));return data.user}
 export async function loadCloudGame(){const data=await request("/api/game",{headers:{Authorization:`Bearer ${getToken()}`}});return data.game}
 export async function saveCloudGame(game){if(getToken())await request("/api/game",{method:"PUT",headers:{Authorization:`Bearer ${getToken()}`},body:JSON.stringify({game})})}
+export async function transferCredits(username,amount){return request("/api/transfers",{method:"POST",headers:{Authorization:`Bearer ${getToken()}`},body:JSON.stringify({username,amount})})}
