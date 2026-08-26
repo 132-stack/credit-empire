@@ -44,19 +44,96 @@ export default function App(){
    setGame(g=>({...g,credits:g.credits+(type==="buy"?-cost:cost),market:{...g.market,[isStock?"stocks":"items"]:{...g.market[isStock?"stocks":"items"],[id]:{...book,owned:book.owned+(type==="buy"?qty:-qty)}}}}));
    notify(`${type==="buy"?"Bought":"Sold"} ${qty} ${isStock?"share(s)":"item(s)"} for ${money(cost)}.`);
  }
- function nextDay(){
-   setGame(current=>{
-     const result=advanceMarket(current.market,current.day,current.seed);
-    const companyResult=advanceCompanies(current.companies||initialCompanies(),current.day,current.seed,current.workers||initialWorkers());
+function nextDay(){
+  setGame(current=>{
+    const result=advanceMarket(current.market,current.day,current.seed);
+    const companyResult=advanceCompanies(
+      current.companies||initialCompanies(),
+      current.day,
+      current.seed,
+      current.workers||initialWorkers()
+    );
+
     const salary=workerUpkeep(current.workers||initialWorkers());
-     const before=netWorth(current);
-    const cooldowns=Object.fromEntries(Object.entries(current.jobCooldowns||{}).map(([id,days])=>[id,Math.max(0,days-1)]));
-    const next={...current,credits:current.credits+companyResult.revenue-salary,companies:companyResult.companies,day:current.day+1,market:result,jobCooldowns:cooldowns,history:[...(current.history||[]),{day:current.day,event:result.event.name,netWorth:before}],lastDayChange:0};
-     next.lastDayChange=netWorth(next)-before;
-    notify(`Day ${next.day}: ${result.event.icon} ${result.event.name}${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}${salary?` · Payroll ${money(salary)}`:""}`);
-     return next;
-   });
- }
+    const before=netWorth(current);
+
+    const cooldowns=Object.fromEntries(
+      Object.entries(current.jobCooldowns||{}).map(
+        ([id,days])=>[id,Math.max(0,days-1)]
+      )
+    );
+
+    // 🤖 NPC AUCTION SYSTEM
+    const auctions=(current.auctions||[]).map(a=>{
+      if(a.done) return a;
+
+      let updated={
+        ...a,
+        time:Math.max(0,a.time-1)
+      };
+
+      // NPC has a chance to bid
+      if(updated.time>0 && Math.random()<0.55){
+        const npcNames=["NPC Trader","Market Bot","Auction King","Rich Investor"];
+        const npc=npcNames[Math.floor(Math.random()*npcNames.length)];
+
+        const increase=Math.max(
+          50,
+          Math.round(updated.current*(0.08+Math.random()*0.12))
+        );
+
+        const newBid=updated.current+increase;
+
+        updated={
+          ...updated,
+          current:newBid,
+          bidder:npc
+        };
+      }
+
+      // Auction ends
+      if(updated.time<=0){
+        updated={
+          ...updated,
+          time:0,
+          done:true,
+          winner:updated.bidder||"NPC"
+        };
+      }
+
+      return updated;
+    });
+
+    const next={
+      ...current,
+      credits:current.credits+companyResult.revenue-salary,
+      companies:companyResult.companies,
+      day:current.day+1,
+      market:result,
+      jobCooldowns:cooldowns,
+      auctions:auctions,
+      history:[
+        ...(current.history||[]),
+        {
+          day:current.day,
+          event:result.event.name,
+          netWorth:before
+        }
+      ],
+      lastDayChange:0
+    };
+
+    next.lastDayChange=netWorth(next)-before;
+
+    notify(
+      `Day ${next.day}: ${result.event.icon} ${result.event.name}`+
+      `${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}`+
+      `${salary?` · Payroll ${money(salary)}`:""}
+    );
+
+    return next;
+  });
+}
  function doJob(job){
    const cd=game.jobCooldowns[job.id]||0;
    if(cd>0)return notify(`${job.name} is ready in ${cd} day(s).`,"bad");
