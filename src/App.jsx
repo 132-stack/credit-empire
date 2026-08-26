@@ -44,102 +44,25 @@ export default function App(){
    setGame(g=>({...g,credits:g.credits+(type==="buy"?-cost:cost),market:{...g.market,[isStock?"stocks":"items"]:{...g.market[isStock?"stocks":"items"],[id]:{...book,owned:book.owned+(type==="buy"?qty:-qty)}}}}));
    notify(`${type==="buy"?"Bought":"Sold"} ${qty} ${isStock?"share(s)":"item(s)"} for ${money(cost)}.`);
  }
-function nextDay(){
-  setGame(current=>{
-    const result=advanceMarket(current.market,current.day,current.seed);
-    const companyResult=advanceCompanies(
-      current.companies||initialCompanies(),
-      current.day,
-      current.seed,
-      current.workers||initialWorkers()
-    );
-
+ function nextDay(){
+   setGame(current=>{
+     const result=advanceMarket(current.market,current.day,current.seed);
+    const companyResult=advanceCompanies(current.companies||initialCompanies(),current.day,current.seed,current.workers||initialWorkers());
     const salary=workerUpkeep(current.workers||initialWorkers());
-    const before=netWorth(current);
-
-    const cooldowns=Object.fromEntries(
-      Object.entries(current.jobCooldowns||{}).map(
-        ([id,days])=>[id,Math.max(0,days-1)]
-      )
-    );
-
-    // 🤖 NPC AUCTION SYSTEM
-    const auctions=(current.auctions||[]).map(a=>{
-      if(a.done) return a;
-
-      let updated={
-        ...a,
-        time:Math.max(0,a.time-1)
-      };
-
-      // NPC has a chance to bid
-      if(updated.time>0 && Math.random()<0.55){
-        const npcNames=["NPC Trader","Market Bot","Auction King","Rich Investor"];
-        const npc=npcNames[Math.floor(Math.random()*npcNames.length)];
-
-        const increase=Math.max(
-          50,
-          Math.round(updated.current*(0.08+Math.random()*0.12))
-        );
-
-        const newBid=updated.current+increase;
-
-        updated={
-          ...updated,
-          current:newBid,
-          bidder:npc
-        };
-      }
-
-      // Auction ends
-      if(updated.time<=0){
-        updated={
-          ...updated,
-          time:0,
-          done:true,
-          winner:updated.bidder||"NPC"
-        };
-      }
-
-      return updated;
-    });
-
-    const next={
-      ...current,
-      credits:current.credits+companyResult.revenue-salary,
-      companies:companyResult.companies,
-      day:current.day+1,
-      market:result,
-      jobCooldowns:cooldowns,
-      auctions:auctions,
-      history:[
-        ...(current.history||[]),
-        {
-          day:current.day,
-          event:result.event.name,
-          netWorth:before
-        }
-      ],
-      lastDayChange:0
-    };
-
-    next.lastDayChange=netWorth(next)-before;
-
-    notify(
-      `Day ${next.day}: ${result.event.icon} ${result.event.name}`+
-      `${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}`+
-      `${salary?` · Payroll ${money(salary)}`:""}
-    );
-
-    return next;
-  });
-}
-function doJob(job){
-  const cd=game.jobCooldowns[job.id]||0;
-  if(cd>0)return notify(job.name+" is ready in "+cd+" day(s).","bad");
-  setGame(g=>({...g,credits:g.credits+job.reward,jobCooldowns:{...g.jobCooldowns,[job.id]:job.cooldown}}));
-  notify(job.icon+" Job complete! +"+money(job.reward));
-}
+     const before=netWorth(current);
+    const cooldowns=Object.fromEntries(Object.entries(current.jobCooldowns||{}).map(([id,days])=>[id,Math.max(0,days-1)]));
+    const next={...current,credits:current.credits+companyResult.revenue-salary,companies:companyResult.companies,day:current.day+1,market:result,jobCooldowns:cooldowns,history:[...(current.history||[]),{day:current.day,event:result.event.name,netWorth:before}],lastDayChange:0};
+     next.lastDayChange=netWorth(next)-before;
+    notify(`Day ${next.day}: ${result.event.icon} ${result.event.name}${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}${salary?` · Payroll ${money(salary)}`:""}`);
+     return next;
+   });
+ }
+ function doJob(job){
+   const cd=game.jobCooldowns[job.id]||0;
+   if(cd>0)return notify(`${job.name} is ready in ${cd} day(s).`,"bad");
+   setGame(g=>({...g,credits:g.credits+job.reward,jobCooldowns:{...g.jobCooldowns,[job.id]:job.cooldown}}));
+   notify(`${job.icon} Job complete! +${money(job.reward)}`);
+ }
  function advance(){ nextDay(); }
 
  if(!user) return <AuthScreen onAuth={setUser}/>;
@@ -179,7 +102,7 @@ function doJob(job){
       {page==="achievements"&&<Achievements game={game}/>}
     </main>
    </div>
-   {toast&&<div className={"toast "+toast.type}>{toast.text}</div>}
+   {toast&&<div className={`toast ${toast.type}`}>{toast.text}</div>}
  </div>
 }
 
@@ -206,7 +129,7 @@ function Dashboard({game,wealth,stockValue,itemValue,gainers,nextDay}){
   <div className="cards four"><Stat title="Credits" value={money(game.credits)} icon="💰"/><Stat title="Net Worth" value={money(wealth)} icon="🏦"/><Stat title="Stocks" value={money(stockValue)} icon="📈"/><Stat title="Items" value={money(itemValue)} icon="💎"/></div>
   <div className="grid2"><section className="panel"><SectionTitle title="Today's market" icon="⚡"/><div className="marketmove"><MiniMarket title="Top gainer" stock={best} data={game.market.stocks[best.id]}/><MiniMarket title="Biggest drop" stock={worst} data={game.market.stocks[worst.id]}/></div></section>
   <section className="panel"><SectionTitle title="How to play" icon="🧠"/><ul className="tips"><li>Buy low and sell higher to grow your fictional wealth.</li><li>Spread your assets instead of putting everything in one place.</li><li>Jobs give steady income while markets can be risky.</li><li>Press <b>Next Day</b> to update prices and trigger events.</li></ul></section></div>
-  <section className="panel"><SectionTitle title="Recent events" icon="📰"/>{game.history.length?<div className="eventlist">{game.history.slice(-5).reverse().map((h,i)=><div className="eventrow" key={i}><span>📅 Day {h.day}</span><b>{h.event}</b><small>Net worth: {money(h.netWorth)}</small></div>)}</div>:<Empty text="No market events yet. Advance the day to start the economy."/>}</section>
+  <section className="panel"><SectionTitle title="Recent events" icon="📰"/>{game.history.length?<div className="eventlist">{game.history.slice(-5).reverse().map((h,i)=><div className="eventrow" key={i}><span>📅 Day {h.day}</span><b>{h.event}</b><small>Net worth: {money(h.netWorth)}</small></div>)}</div>:<Empty text="No market events yet. Advance the day to start the economy."/ >}</section>
  </Page>
 }
 
@@ -226,16 +149,7 @@ function StockCard({s,data,buy,sell,selected,setSelected}){
  const [q,setQ]=useState(1);
  return <div className="assetcard"><div className="assethead"><div><b>{s.name}</b><small>{s.ticker} · {s.sector}</small></div><span className={data.change>=0?"pill up":"pill down"}>{pct(data.change)}</span></div><strong className="price">{money(data.price)}</strong><Spark data={data.history} positive={data.change>=0}/><div className="owned">You own <b>{data.owned}</b> share(s)</div>{selected&&<div className="explainer">You own {data.owned} shares × {money(data.price)} each = <b>{money(data.owned*data.price)}</b>. The price changes when a new day begins.</div>}<div className="trade"><input type="number" min="1" value={q} onChange={e=>setQ(e.target.value)}/><button onClick={()=>buy(q)}>Buy</button><button className="secondary" onClick={()=>sell(q)}>Sell</button></div><button className="learn" onClick={setSelected}><Info size={14}/> {selected?"Hide":"Explain this stock"}</button></div>
 }
-function Spark({data}){
-  const min=Math.min(...data);
-  const max=Math.max(...data);
-  const pts=data.map((v,i)=>{
-    const x=i*(100/(data.length-1||1));
-    const y=100-(v-min)/(max-min||1)*100;
-    return x+","+y;
-  }).join(" ");
-  return <svg className="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts}/></svg>;
-}
+function Spark({data}){const min=Math.min(...data),max=Math.max(...data);const pts=data.map((v,i)=>`${i*(100/(data.length-1||1))},${100-(v-min)/(max-min||1)*100}`).join(" ");return <svg className="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts}/></svg>}
 
 function Market({game,transact}){return <Page title="Player Market" sub="Trade fictional resources whose values react to supply and demand."><div className="itemgrid">{ITEMS.map(i=>{const d=game.market.items[i.id];return <ItemCard key={i.id} i={i} d={d} buy={q=>transact("buy",i.id,q)} sell={q=>transact("sell",i.id,q)}/>})}</div></Page>}
 
@@ -280,157 +194,8 @@ function Portfolio({game,wealth,stockValue,itemValue}){const initial=10000;const
 
 function Jobs({game,doJob}){return <Page title="Jobs" sub="Earn steady Credits without depending entirely on the market."><div className="jobgrid">{JOBS.map(j=>{const cd=game.jobCooldowns[j.id]||0;return <div className="jobcard" key={j.id}><div className="jobicon">{j.icon}</div><h3>{j.name}</h3><p>{j.desc}</p><small>Task: {j.task}</small><strong>+{money(j.reward)}</strong><button disabled={cd>0} className="primary" onClick={()=>doJob(j)}>{cd?`Ready in ${cd} day(s)`:"Complete Job"}</button></div>})}</div></Page>}
 
-function Auctions({game,setGame,notify}){
-  const [bid,setBid]=useState({});
-  const [custom,setCustom]=useState("");
+function Auctions({game,setGame,notify}){const [bid,setBid]=useState({});const [custom,setCustom]=useState("");const active=game.auctions.filter(a=>!a.done);const create=()=>{const item=ITEMS[Math.floor(Math.random()*ITEMS.length)];const start=Math.round(item.base*(.7+Math.random()*.8));const a={id:Date.now(),name:`Rare ${item.name}`,icon:item.icon,current:start,buyout:start*2.5,time:3,bidder:"Starting Bid",done:false};setGame(g=>({...g,auctions:[...g.auctions,a]}));notify("New auction created.");};const place=(a)=>{const amount=Number(bid[a.id]||a.current+100);if(amount<=a.current)return notify("Your bid must beat the current bid.","bad");if(amount>game.credits)return notify("Not enough Credits.","bad");setGame(g=>({...g,credits:g.credits-amount,auctions:g.auctions.map(x=>x.id===a.id?{...x,current:amount,bidder:"You",playerBid:amount}:x)}));notify(`Bid placed: ${money(amount)}`)};return <Page title="Auction Hall" sub="NPC-style auctions for fictional collectibles. Bids are game Credits only."><div className="hero small"><div><h2>🏷️ Auction House</h2><p>NPCs can bid aggressively as days pass. Win rare items for your collection.</p></div><button className="primary" onClick={create}>+ Create NPC Auction</button></div>{active.length?<div className="auctiongrid">{active.map(a=><div className="auction" key={a.id}><div className="auctiontop"><span>{a.icon}</span><div><b>{a.name}</b><small>{a.bidder==="You"?"You're winning!":a.bidder}</small></div></div><div className="bidline"><span>Current bid</span><strong>{money(a.current)}</strong></div><div className="bidline"><span>Buyout</span><strong>{money(a.buyout)}</strong></div><div className="timer">⏱️ {a.time} day(s) left</div><div className="trade"><input type="number" min={a.current+1} placeholder={a.current+100} value={bid[a.id]||""} onChange={e=>setBid({...bid,[a.id]:e.target.value})}/><button onClick={()=>place(a)}>Bid</button></div></div>)}</div>:<Empty text="No active auctions. Create one to get the hall moving."/>}<section className="panel"><SectionTitle title="Auction history" icon="📜"/>{game.auctions.filter(a=>a.done).length?<div className="eventlist">{game.auctions.filter(a=>a.done).map(a=><div className="eventrow" key={a.id}><span>{a.icon} {a.name}</span><b>{money(a.current)}</b><small>{a.winner||"NPC"} won</small></div>)}</div>:<Empty text="Completed auctions will appear here."/ >}</section></Page>}
 
-  const active=game.auctions.filter(a=>!a.done);
-
-  const create=()=>{
-    const item=ITEMS[Math.floor(Math.random()*ITEMS.length)];
-    const start=Math.round(item.base*(.7+Math.random()*.8));
-
-    const a={
-      id:Date.now(),
-      name:`Rare ${item.name}`,
-      icon:item.icon,
-      current:start,
-      buyout:start*2.5,
-      time:3,
-      bidder:"Starting Bid",
-      done:false
-    };
-
-    setGame(g=>({
-      ...g,
-      auctions:[...g.auctions,a]
-    }));
-
-    notify("New auction created.");
-  };
-
-  const place=(a)=>{
-    const amount=Number(bid[a.id]||a.current+100);
-
-    if(amount<=a.current)
-      return notify("Your bid must beat the current bid.","bad");
-
-    if(amount>game.credits)
-      return notify("Not enough Credits.","bad");
-
-    setGame(g=>({
-      ...g,
-      credits:g.credits-amount,
-      auctions:g.auctions.map(x=>
-        x.id===a.id
-          ? {
-              ...x,
-              current:amount,
-              bidder:"You",
-              playerBid:amount
-            }
-          : x
-      )
-    }));
-
-    notify(`Bid placed: ${money(amount)}`);
-  };
-
-  return (
-    <Page
-      title="Auction Hall"
-      sub="NPC-style auctions for fictional collectibles. Bids are game Credits only."
-    >
-      <div className="hero small">
-        <div>
-          <h2>🏷️ Auction House</h2>
-          <p>
-            NPCs can bid aggressively as days pass. Win rare items for your collection.
-          </p>
-        </div>
-
-        <button className="primary" onClick={create}>
-          + Create NPC Auction
-        </button>
-      </div>
-
-      {active.length ? (
-        <div className="auctiongrid">
-          {active.map(a=>(
-            <div className="auction" key={a.id}>
-              <div className="auctiontop">
-                <span>{a.icon}</span>
-
-                <div>
-                  <b>{a.name}</b>
-                  <small>
-                    {a.bidder==="You" ? "You're winning!" : a.bidder}
-                  </small>
-                </div>
-              </div>
-
-              <div className="bidline">
-                <span>Current bid</span>
-                <strong>{money(a.current)}</strong>
-              </div>
-
-              <div className="bidline">
-                <span>Buyout</span>
-                <strong>{money(a.buyout)}</strong>
-              </div>
-
-              <div className="timer">
-                ⏱️ {a.time} day(s) left
-              </div>
-
-              <div className="trade">
-                <input
-                  type="number"
-                  min={a.current+1}
-                  placeholder={a.current+100}
-                  value={bid[a.id]||""}
-                  onChange={e=>
-                    setBid({
-                      ...bid,
-                      [a.id]:e.target.value
-                    })
-                  }
-                />
-
-                <button onClick={()=>place(a)}>
-                  Bid
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <Empty text="No active auctions. Create one to get the hall moving."/>
-      )}
-
-      <section className="panel">
-        <SectionTitle title="Auction history" icon="📜"/>
-
-        {game.auctions.filter(a=>a.done).length ? (
-          <div className="eventlist">
-            {game.auctions
-              .filter(a=>a.done)
-              .map(a=>(
-                <div className="eventrow" key={a.id}>
-                  <span>{a.icon} {a.name}</span>
-                  <b>{money(a.current)}</b>
-                  <small>{a.winner||"NPC"} won</small>
-                </div>
-              ))}
-          </div>
-        ) : (
-          <Empty text="Completed auctions will appear here."/>
-        )}
-      </section>
-    </Page>
-  );
-}
-
-function HistoryPage({game}){return <Page title="History" sub="Your recent market timeline.">{game.history.length?<div className="timeline">{game.history.slice().reverse().map((h,i)=><div className="timelineitem" key={i}><div className="dot"></div><div><small>DAY {h.day}</small><h3>{h.event}</h3><p>Recorded net worth: {money(h.netWorth)}</p></div></div>)}</div>:<Empty text="Your timeline is empty. Advance the day to generate your first market event."/>}</Page>}
+function HistoryPage({game}){return <Page title="History" sub="Your recent market timeline.">{game.history.length?<div className="timeline">{game.history.slice().reverse().map((h,i)=><div className="timelineitem" key={i}><div className="dot"></div><div><small>DAY {h.day}</small><h3>{h.event}</h3><p>Recorded net worth: {money(h.netWorth)}</p></div></div>)}</div>:<Empty text="Your timeline is empty. Advance the day to generate your first market event."/ >}</Page>}
 
 function Achievements({game}){const nw=netWorth(game);const list=[["💰","First 1,000 CR",game.credits>=1000],["📈","First stock purchase",STOCKS.some(s=>game.market.stocks[s.id].owned>0)],["💎","First item purchase",ITEMS.some(i=>game.market.items[i.id].owned>0)],["🏆","10,000 CR net worth",nw>=10000],["👑","100,000 CR net worth",nw>=100000],["🧾","Own 100 shares",STOCKS.reduce((n,s)=>n+game.market.stocks[s.id].owned,0)>=100],["🔥","Make a 50% profit",nw>=15000],["📉","Survive a market crash",game.history.some(h=>h.event.includes("Market Crash"))]];return <Page title="Achievements" sub="Milestones turn your market journey into a collection game."><div className="achgrid">{list.map(([icon,name,done])=><div className={done?"achievement done":"achievement"} key={name}><span>{icon}</span><div><b>{name}</b><small>{done?"Unlocked!":"Keep playing to unlock."}</small></div>{done&&<Trophy size={20}/>}</div>)}</div></Page>}
