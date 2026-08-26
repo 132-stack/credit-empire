@@ -15,10 +15,6 @@ const app=express();
 app.use(cors());
 app.use(express.json({limit:"1mb"}));
 
-const distPath = path.join(root, "dist");
-
-app.use(express.static(distPath));
-
 db.exec(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -63,15 +59,39 @@ app.put("/api/game",auth,(req,res)=>{
   res.json({ok:true});
 });
 
-app.use((req, res, next) => {
-  if (req.path.startsWith("/api/")) {
-    return next();
-  }
+app.post("/api/transfers",auth,(req,res)=>{
+  const recipientUsername=typeof req.body?.username==="string"?req.body.username.trim():"";
+  const amount=Number(req.body?.amount);
+  if(!validUsername(recipientUsername))return res.status(400).json({error:"Enter a valid recipient username."});
+  if(!Number.isFinite(amount)||amount<=0||Math.round(amount*100)/100!==amount)return res.status(400).json({error:"Enter a positive amount with up to 2 decimals."});
 
-  res.sendFile(path.join(distPath, "index.html"));
+  try{
+    const transfer=db.transaction(()=>{
+      const sender=db.prepare("SELECT id,username,game_json FROM users WHERE id=?").get(req.user.id);
+      const recipient=db.prepare("SELECT id,username,game_json FROM users WHERE username=?").get(recipientUsername);
+      if(!recipient)return {error:"That player does not exist.",status:404};
+      if(recipient.id===sender.id)return {error:"You cannot transfer Credits to yourself.",status:400};
+      if(!sender.game_json)return {error:"Start your game before sending Credits.",status:400};
+      if(!recipient.game_json)return {error:"That player has not started a game yet.",status:400};
+
+      const senderGame=JSON.parse(sender.game_json);
+      const recipientGame=JSON.parse(recipient.game_json);
+      if(Number(senderGame.credits)<amount)return {error:"You do not have enough Credits.",status:400};
+      senderGame.credits=Number((Number(senderGame.credits)-amount).toFixed(2));
+      recipientGame.credits=Number((Number(recipientGame.credits)+amount).toFixed(2));
+      db.prepare("UPDATE users SET game_json=? WHERE id=?").run(JSON.stringify(senderGame),sender.id);
+      db.prepare("UPDATE users SET game_json=? WHERE id=?").run(JSON.stringify(recipientGame),recipient.id);
+      return {ok:true,recipient:recipient.username,amount,game:senderGame};
+    })();
+    if(transfer.error)return res.status(transfer.status).json({error:transfer.error});
+    res.json(transfer);
+  }catch(error){res.status(400).json({error:"Could not complete the transfer."})}
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Credit Empire API listening on port ${PORT}`);
-});
+const dist=path.join(root,"dist");
+app.use(express.static(dist));
+app.get(/^(?!\/api).*/,(_,res)=>res.sendFile(path.join(dist,"index.html")));
+
+const port=process.env.PORT||3001;
+app.listen(port,()=>console.log(`Credit Empire listening on port ${port}`));
+
