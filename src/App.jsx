@@ -179,7 +179,7 @@ function doJob(job){
       {page==="achievements"&&<Achievements game={game}/>}
     </main>
    </div>
-   {toast&&<div className={`toast ${toast.type}`}>{toast.text}</div>}
+   {toast&&<div className={"toast "+toast.type}>{toast.text}</div>}
  </div>
 }
 
