@@ -265,10 +265,10 @@ function nextDay(){
     next.lastDayChange=netWorth(next)-before;
 
     notify(
-      `Day ${next.day}: ${result.event.icon} ${result.event.name}`+
-      `${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}`+
-      `${salary?` · Payroll ${money(salary)}`:""}`
-    );
+  `Day ${next.day}: ${result.event.icon} ${result.event.name}` +
+  (companyResult.revenue ? ` · Companies earned ${money(companyResult.revenue)}` : "") +
+  (salary ? ` · Payroll ${money(salary)}` : "")
+);
 
     return next;
   });
