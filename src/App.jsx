@@ -1,8 +1,8 @@
 import React,{useEffect,useMemo,useState} from "react";
-import { BarChart3, BriefcaseBusiness, Building2, Gavel, History, Home, Package, RefreshCw, Trophy, Wallet, Users, TrendingDown, TrendingUp, Info, Plus, Minus } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, Gavel, History, Home, Package, RefreshCw, Trophy, Wallet, Users, Send, TrendingDown, TrendingUp, Info, Plus, Minus } from "lucide-react";
 import { STOCKS, ITEMS, COMPANIES, WORKERS, initialMarket, initialCompanies, initialWorkers, advanceMarket, advanceCompanies, analystReport, companyValue, netWorth, workerUpkeep } from "./systems/economy";
 import {JOBS} from "./systems/jobs";
-import {saveGame,clearGame,getSession,clearSession,login,register,loadCloudGame,saveCloudGame} from "./systems/saveSystem";
+import {saveGame,clearGame,getSession,clearSession,login,register,loadCloudGame,saveCloudGame,transferCredits} from "./systems/saveSystem";
 
 const money=n=>`${Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} CR`;
 const pct=n=>`${n>=0?"+":""}${Number(n).toFixed(1)}%`;
@@ -84,6 +84,7 @@ export default function App(){
       <Nav icon={<Users/>} text="Workers" active={page==="workers"} onClick={()=>setPage("workers")}/>
       <Nav icon={<Gavel/>} text="Auctions" active={page==="auctions"} onClick={()=>setPage("auctions")}/>
       <Nav icon={<Wallet/>} text="Portfolio" active={page==="portfolio"} onClick={()=>setPage("portfolio")}/>
+      <Nav icon={<Send/>} text="Send Credits" active={page==="transfer"} onClick={()=>setPage("transfer")}/>
       <Nav icon={<BriefcaseBusiness/>} text="Jobs" active={page==="jobs"} onClick={()=>setPage("jobs")}/>
       <Nav icon={<History/>} text="History" active={page==="history"} onClick={()=>setPage("history")}/>
       <div className="sidebottom"><button onClick={()=>setPage("achievements")}><Trophy/> Achievements</button><button onClick={reset}><RefreshCw/> Reset Game</button></div>
@@ -96,6 +97,7 @@ export default function App(){
         {page==="companies" && <Companies game={game} setGame={setGame} notify={notify} />} 
         {page==="workers" && <Workers game={game} setGame={setGame} notify={notify} />} 
       {page==="portfolio"&&<Portfolio game={game} wealth={wealth} stockValue={stockValue} itemValue={itemValue}/>}
+      {page==="transfer"&&<TransferCredits game={game} user={user} setGame={setGame} notify={notify}/>} 
       {page==="jobs"&&<Jobs game={game} doJob={doJob}/>}
       {page==="auctions"&&<Auctions game={game} setGame={setGame} notify={notify}/>}
       {page==="history"&&<HistoryPage game={game}/>}
@@ -193,6 +195,24 @@ function ItemCard({i,d,buy,sell}){const [q,setQ]=useState(1);return <div classNa
 function Portfolio({game,wealth,stockValue,itemValue}){const initial=10000;const overall=wealth-initial;const best=STOCKS.map(s=>({s,d:game.market.stocks[s.id]})).filter(x=>x.d.owned).sort((a,b)=>(b.d.price-b.d.previous)-(a.d.price-a.d.previous))[0];return <Page title="Portfolio" sub="A simple view of what your fictional empire is worth."><div className="cards four"><Stat title="Cash" value={money(game.credits)} icon="💰"/><Stat title="Stock value" value={money(stockValue)} icon="📈"/><Stat title="Item value" value={money(itemValue)} icon="💎"/><Stat title="Net worth" value={money(wealth)} icon="🏆"/></div><div className="panel"><SectionTitle title="Performance" icon="📊"/><div className="perf"><div><small>Overall profit/loss</small><b className={overall>=0?"up":"down"}>{money(overall)} ({pct(overall/initial*100)})</b></div><div><small>Today's change</small><b className={game.lastDayChange>=0?"up":"down"}>{money(game.lastDayChange)}</b></div><div><small>Best current mover</small><b>{best?best.s.name:"No stock owned yet"}</b></div></div></div><div className="panel"><SectionTitle title="Holdings" icon="🧾"/><table><thead><tr><th>Asset</th><th>Owned</th><th>Price</th><th>Value</th><th>Day</th></tr></thead><tbody>{STOCKS.map(s=>{const d=game.market.stocks[s.id];return d.owned?<tr key={s.id}><td>{s.name}</td><td>{d.owned}</td><td>{money(d.price)}</td><td>{money(d.price*d.owned)}</td><td className={d.change>=0?"up":"down"}>{pct(d.change)}</td></tr>:null})}{ITEMS.map(i=>{const d=game.market.items[i.id];return d.owned?<tr key={i.id}><td>{i.icon} {i.name}</td><td>{d.owned}</td><td>{money(d.price)}</td><td>{money(d.price*d.owned)}</td><td className={d.change>=0?"up":"down"}>{pct(d.change)}</td></tr>:null})}</tbody></table></div></Page>}
 
 function Jobs({game,doJob}){return <Page title="Jobs" sub="Earn steady Credits without depending entirely on the market."><div className="jobgrid">{JOBS.map(j=>{const cd=game.jobCooldowns[j.id]||0;return <div className="jobcard" key={j.id}><div className="jobicon">{j.icon}</div><h3>{j.name}</h3><p>{j.desc}</p><small>Task: {j.task}</small><strong>+{money(j.reward)}</strong><button disabled={cd>0} className="primary" onClick={()=>doJob(j)}>{cd?`Ready in ${cd} day(s)`:"Complete Job"}</button></div>})}</div></Page>}
+
+function TransferCredits({game,user,setGame,notify}){
+ const [username,setUsername]=useState("");
+ const [amount,setAmount]=useState("");
+ const [busy,setBusy]=useState(false);
+ async function submit(event){
+   event.preventDefault();
+   setBusy(true);
+   try{
+     const result=await transferCredits(username,Number(amount));
+     setGame(result.game);
+     setUsername("");
+     setAmount("");
+     notify(`Sent ${money(result.amount)} to ${result.recipient}.`);
+   }catch(error){notify(error.message,"bad")}
+   finally{setBusy(false)}
+ }
+ return <Page title="Send Credits" sub="Transfer fictional Credits to another registered player."><section className="panel"><SectionTitle title="Player transfer" icon="💸"/><form className="transferform" onSubmit={submit}><label>Recipient username<input value={username} onChange={event=>setUsername(event.target.value)} placeholder="Username" pattern="[a-zA-Z0-9_]{3,24}" required /></label><label>Amount<input type="number" min="0.01" max={game.credits} step="0.01" value={amount} onChange={event=>setAmount(event.target.value)} placeholder="0.00" required /></label><p className="muted">Available: {money(game.credits)} · Signed in as {user.username}</p><button className="primary" disabled={busy}>{busy?"Sending...":"Send Credits"}</button></form></section></Page>}
 
 function Auctions({game,setGame,notify}){const [bid,setBid]=useState({});const [custom,setCustom]=useState("");const active=game.auctions.filter(a=>!a.done);const create=()=>{const item=ITEMS[Math.floor(Math.random()*ITEMS.length)];const start=Math.round(item.base*(.7+Math.random()*.8));const a={id:Date.now(),name:`Rare ${item.name}`,icon:item.icon,current:start,buyout:start*2.5,time:3,bidder:"Starting Bid",done:false};setGame(g=>({...g,auctions:[...g.auctions,a]}));notify("New auction created.");};const place=(a)=>{const amount=Number(bid[a.id]||a.current+100);if(amount<=a.current)return notify("Your bid must beat the current bid.","bad");if(amount>game.credits)return notify("Not enough Credits.","bad");setGame(g=>({...g,credits:g.credits-amount,auctions:g.auctions.map(x=>x.id===a.id?{...x,current:amount,bidder:"You",playerBid:amount}:x)}));notify(`Bid placed: ${money(amount)}`)};return <Page title="Auction Hall" sub="NPC-style auctions for fictional collectibles. Bids are game Credits only."><div className="hero small"><div><h2>🏷️ Auction House</h2><p>NPCs can bid aggressively as days pass. Win rare items for your collection.</p></div><button className="primary" onClick={create}>+ Create NPC Auction</button></div>{active.length?<div className="auctiongrid">{active.map(a=><div className="auction" key={a.id}><div className="auctiontop"><span>{a.icon}</span><div><b>{a.name}</b><small>{a.bidder==="You"?"You're winning!":a.bidder}</small></div></div><div className="bidline"><span>Current bid</span><strong>{money(a.current)}</strong></div><div className="bidline"><span>Buyout</span><strong>{money(a.buyout)}</strong></div><div className="timer">⏱️ {a.time} day(s) left</div><div className="trade"><input type="number" min={a.current+1} placeholder={a.current+100} value={bid[a.id]||""} onChange={e=>setBid({...bid,[a.id]:e.target.value})}/><button onClick={()=>place(a)}>Bid</button></div></div>)}</div>:<Empty text="No active auctions. Create one to get the hall moving."/>}<section className="panel"><SectionTitle title="Auction history" icon="📜"/>{game.auctions.filter(a=>a.done).length?<div className="eventlist">{game.auctions.filter(a=>a.done).map(a=><div className="eventrow" key={a.id}><span>{a.icon} {a.name}</span><b>{money(a.current)}</b><small>{a.winner||"NPC"} won</small></div>)}</div>:<Empty text="Completed auctions will appear here."/ >}</section></Page>}
 
