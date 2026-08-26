@@ -135,11 +135,11 @@ function nextDay(){
   });
 }
  function doJob(job){
-   const cd=game.jobCooldowns[job.id]||0;
-   if(cd>0)return notify(`${job.name} is ready in ${cd} day(s).`,"bad");
-   setGame(g=>({...g,credits:g.credits+job.reward,jobCooldowns:{...g.jobCooldowns,[job.id]:job.cooldown}}));
-   notify(`${job.icon} Job complete! +${money(job.reward)}`);
- }
+  const cd=game.jobCooldowns[job.id]||0;
+  if(cd>0)return notify(`${job.name} is ready in ${cd} day(s).`,"bad");
+  setGame(g=>({...g,credits:g.credits+job.reward,jobCooldowns:{...g.jobCooldowns,[job.id]:job.cooldown}}));
+  notify(`${job.icon} Job complete! +${money(job.reward)}`);
+}
  function advance(){ nextDay(); }
 
  if(!user) return <AuthScreen onAuth={setUser}/>;
