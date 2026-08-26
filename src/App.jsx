@@ -226,7 +226,16 @@ function StockCard({s,data,buy,sell,selected,setSelected}){
  const [q,setQ]=useState(1);
  return <div className="assetcard"><div className="assethead"><div><b>{s.name}</b><small>{s.ticker} · {s.sector}</small></div><span className={data.change>=0?"pill up":"pill down"}>{pct(data.change)}</span></div><strong className="price">{money(data.price)}</strong><Spark data={data.history} positive={data.change>=0}/><div className="owned">You own <b>{data.owned}</b> share(s)</div>{selected&&<div className="explainer">You own {data.owned} shares × {money(data.price)} each = <b>{money(data.owned*data.price)}</b>. The price changes when a new day begins.</div>}<div className="trade"><input type="number" min="1" value={q} onChange={e=>setQ(e.target.value)}/><button onClick={()=>buy(q)}>Buy</button><button className="secondary" onClick={()=>sell(q)}>Sell</button></div><button className="learn" onClick={setSelected}><Info size={14}/> {selected?"Hide":"Explain this stock"}</button></div>
 }
-function Spark({data}){const min=Math.min(...data),max=Math.max(...data);const pts=data.map((v,i)=>`${i*(100/(data.length-1||1))},${100-(v-min)/(max-min||1)*100}`).join(" ");return <svg className="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts}/></svg>}
+function Spark({data}){
+  const min=Math.min(...data);
+  const max=Math.max(...data);
+  const pts=data.map((v,i)=>{
+    const x=i*(100/(data.length-1||1));
+    const y=100-(v-min)/(max-min||1)*100;
+    return x+","+y;
+  }).join(" ");
+  return <svg className="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts}/></svg>;
+}
 
 function Market({game,transact}){return <Page title="Player Market" sub="Trade fictional resources whose values react to supply and demand."><div className="itemgrid">{ITEMS.map(i=>{const d=game.market.items[i.id];return <ItemCard key={i.id} i={i} d={d} buy={q=>transact("buy",i.id,q)} sell={q=>transact("sell",i.id,q)}/>})}</div></Page>}
 
