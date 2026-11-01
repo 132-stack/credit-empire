@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useRef,useState} from "react";
 import { BarChart3, BriefcaseBusiness, Building2, Gavel, History, Home, Package, RefreshCw, Trophy, Wallet, Users, Send, TrendingDown, TrendingUp, Info, Plus, Minus, MessageCircle, PhoneCall, Target } from "lucide-react";
 import { STOCKS, ITEMS, COMPANIES, WORKERS, initialMarket, initialCompanies, initialWorkers, advanceMarket, advanceCompanies, analystReport, companyValue, netWorth, workerUpkeep } from "./systems/economy";
 import { advanceAuctions, createInvestorCall, resolveItemId } from "./systems/engagement";
-import {JOBS} from "./systems/jobs";
+import {JOBS,createJobTask} from "./systems/jobs";
 import {ACHIEVEMENTS} from "./systems/achievements";
 import {MILESTONES,advanceGoalPeriods,currentContracts,goalProgress,milestoneProgress,recordGoalActivity} from "./systems/goals";
 import {saveGame,clearGame,getSession,getToken,clearSession,login,register,restoreSession,loadCloudGame,saveCloudGame,transferCredits} from "./systems/saveSystem";
@@ -329,7 +329,59 @@ function ItemCard({i,d,buy,sell}){const [q,setQ]=useState(1);return <div classNa
 
 function Portfolio({game,wealth,stockValue,itemValue}){const initial=10000;const overall=wealth-initial;const best=STOCKS.map(s=>({s,d:game.market.stocks[s.id]})).filter(x=>x.d.owned).sort((a,b)=>(b.d.price-b.d.previous)-(a.d.price-a.d.previous))[0];return <Page title="Portfolio" sub="A simple view of what your fictional empire is worth."><div className="cards four"><Stat title="Cash" value={money(game.credits)} icon="💰"/><Stat title="Stock value" value={money(stockValue)} icon="📈"/><Stat title="Item value" value={money(itemValue)} icon="💎"/><Stat title="Net worth" value={money(wealth)} icon="🏆"/></div><div className="panel"><SectionTitle title="Performance" icon="📊"/><div className="perf"><div><small>Overall profit/loss</small><b className={overall>=0?"up":"down"}>{money(overall)} ({pct(overall/initial*100)})</b></div><div><small>Today's change</small><b className={game.lastDayChange>=0?"up":"down"}>{money(game.lastDayChange)}</b></div><div><small>Best current mover</small><b>{best?best.s.name:"No stock owned yet"}</b></div></div></div><div className="panel"><SectionTitle title="Holdings" icon="🧾"/><table><thead><tr><th>Asset</th><th>Owned</th><th>Price</th><th>Value</th><th>Day</th></tr></thead><tbody>{STOCKS.map(s=>{const d=game.market.stocks[s.id];return d.owned?<tr key={s.id}><td>{s.name}</td><td>{d.owned}</td><td>{money(d.price)}</td><td>{money(d.price*d.owned)}</td><td className={d.change>=0?"up":"down"}>{pct(d.change)}</td></tr>:null})}{ITEMS.map(i=>{const d=game.market.items[i.id];return d.owned?<tr key={i.id}><td>{i.icon} {i.name}</td><td>{d.owned}</td><td>{money(d.price)}</td><td>{money(d.price*d.owned)}</td><td className={d.change>=0?"up":"down"}>{pct(d.change)}</td></tr>:null})}</tbody></table></div></Page>}
 
-function Jobs({game,doJob}){return <Page title="Jobs" sub="Earn steady Credits without depending entirely on the market."><div className="jobgrid">{JOBS.map(j=>{const cd=game.jobCooldowns[j.id]||0;return <div className="jobcard" key={j.id}><div className="jobicon">{j.icon}</div><h3>{j.name}</h3><p>{j.desc}</p><small>Task: {j.task}</small><strong>+{money(j.reward)}</strong><button disabled={cd>0} className="primary" onClick={()=>doJob(j)}>{cd?`Ready in ${cd} day(s)`:"Complete Job"}</button></div>})}</div></Page>}
+function Jobs({game,doJob}) {
+ const [activeTask,setActiveTask]=useState(null);
+ const [progress,setProgress]=useState(0);
+ const [feedback,setFeedback]=useState("");
+
+ function startTask(job) {
+   setActiveTask({job,task:createJobTask(job,game)});
+   setProgress(0);
+   setFeedback("");
+ }
+
+ function completeTask(answer) {
+   if(answer!==activeTask.task.answer){
+     setFeedback("Not quite. Try again!");
+     return;
+   }
+   doJob(activeTask.job);
+   setActiveTask(null);
+   setProgress(0);
+   setFeedback("");
+ }
+
+ function collectSample() {
+   const next=progress+1;
+   setProgress(next);
+   if(next>=activeTask.task.target){
+     doJob(activeTask.job);
+     setActiveTask(null);
+     setProgress(0);
+   }
+ }
+
+ return <Page title="Jobs" sub="Complete a task to earn Credits."><div className="jobgrid">{JOBS.map(job=>{
+   const cooldown=game.jobCooldowns[job.id]||0;
+   const isActive=activeTask?.job.id===job.id;
+   return <div className="jobcard" key={job.id}>
+     <div className="jobicon">{job.icon}</div>
+     <h3>{job.name}</h3>
+     <p>{job.desc}</p>
+     <small>Task: {job.task}</small>
+     <strong>+{money(job.reward)}</strong>
+     {isActive?<div className="job-task">
+       <p>{activeTask.task.prompt}</p>
+       {activeTask.task.type==="collect"?<>
+         <div className="task-progress">Ore samples: {progress}/{activeTask.task.target}</div>
+         <button className="primary" onClick={collectSample}>Collect ore</button>
+       </>:<div className="task-options">{activeTask.task.options.map(option=><button key={option} onClick={()=>completeTask(option)}>{option}</button>)}</div>}
+       {feedback&&<small className="task-feedback">{feedback}</small>}
+       <button className="task-cancel" onClick={()=>{setActiveTask(null);setFeedback("")}}>Cancel task</button>
+     </div>:<button disabled={cooldown>0} className="primary" onClick={()=>startTask(job)}>{cooldown?`Ready in ${cooldown} day(s)`:"Start Task"}</button>}
+   </div>;
+ })}</div></Page>;
+}
 
 function TransferCredits({game,user,setGame,notify}){
  const [username,setUsername]=useState("");
