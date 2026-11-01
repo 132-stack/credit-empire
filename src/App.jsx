@@ -1,15 +1,16 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import { BarChart3, BriefcaseBusiness, Building2, Gavel, History, Home, Package, RefreshCw, Trophy, Wallet, Users, Send, TrendingDown, TrendingUp, Info, Plus, Minus, MessageCircle, PhoneCall } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, Gavel, History, Home, Package, RefreshCw, Trophy, Wallet, Users, Send, TrendingDown, TrendingUp, Info, Plus, Minus, MessageCircle, PhoneCall, Target } from "lucide-react";
 import { STOCKS, ITEMS, COMPANIES, WORKERS, initialMarket, initialCompanies, initialWorkers, advanceMarket, advanceCompanies, analystReport, companyValue, netWorth, workerUpkeep } from "./systems/economy";
 import { advanceAuctions, createInvestorCall, resolveItemId } from "./systems/engagement";
 import {JOBS} from "./systems/jobs";
 import {ACHIEVEMENTS} from "./systems/achievements";
+import {MILESTONES,advanceGoalPeriods,currentContracts,goalProgress,milestoneProgress,recordGoalActivity} from "./systems/goals";
 import {saveGame,clearGame,getSession,getToken,clearSession,login,register,restoreSession,loadCloudGame,saveCloudGame,transferCredits} from "./systems/saveSystem";
 
 const money=n=>`${Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} CR`;
 const pct=n=>`${n>=0?"+":""}${Number(n).toFixed(1)}%`;
 
-function fresh(){return {credits:10000,day:1,market:initialMarket(),companies:initialCompanies(),workers:initialWorkers(),history:[],auctions:[],messages:[],achievements:[],jobsCompleted:{},jobCooldowns:{},tutorialCompleted:false,seed:Math.floor(Math.random()*1e9),lastDayChange:0,started:true};}
+function fresh(){return {credits:10000,day:1,market:initialMarket(),companies:initialCompanies(),workers:initialWorkers(),history:[],auctions:[],messages:[],achievements:[],milestones:[],goalClaims:[],goalStats:{daily:{},weekly:{},allTime:{}},jobsCompleted:{},jobCooldowns:{},tutorialCompleted:false,seed:Math.floor(Math.random()*1e9),lastDayChange:0,started:true};}
 
 function restoreGame(saved){
  const initial=fresh();
@@ -22,6 +23,11 @@ function restoreGame(saved){
    workers:{...initialWorkers(),...saved.workers},
    history:Array.isArray(saved.history)?saved.history:[],
    achievements:Array.isArray(saved.achievements)?saved.achievements.filter(id=>typeof id==="string"):[],
+   milestones:Array.isArray(saved.milestones)?saved.milestones.filter(id=>typeof id==="string"):[],
+   goalClaims:Array.isArray(saved.goalClaims)?saved.goalClaims.filter(id=>typeof id==="string"):[],
+   goalStats:saved.goalStats&&typeof saved.goalStats==="object"?{
+     daily:saved.goalStats.daily||{},weekly:saved.goalStats.weekly||{},allTime:saved.goalStats.allTime||{}
+   }:{daily:{},weekly:{},allTime:{}},
    jobsCompleted:saved.jobsCompleted&&typeof saved.jobsCompleted==="object"?saved.jobsCompleted:{},
    jobCooldowns:saved.jobCooldowns&&typeof saved.jobCooldowns==="object"?saved.jobCooldowns:{},
    tutorialCompleted:saved.tutorialCompleted??true,
@@ -71,6 +77,19 @@ export default function App(){
  },[game]);
  useEffect(()=>{
    if(!game)return;
+   const claimed=new Set(game.milestones||[]);
+   const ready=MILESTONES.filter(milestone=>!claimed.has(milestone.id)&&milestoneProgress(game,milestone)>=milestone.target);
+   if(!ready.length)return;
+   setGame(current=>{
+     const currentClaims=new Set(current.milestones||[]);
+     const completed=MILESTONES.filter(milestone=>!currentClaims.has(milestone.id)&&milestoneProgress(current,milestone)>=milestone.target);
+     if(!completed.length)return current;
+     return {...current,credits:current.credits+completed.reduce((total,milestone)=>total+milestone.reward,0),milestones:[...currentClaims,...completed.map(milestone=>milestone.id)]};
+   });
+   setToast({text:`Milestone reached! ${ready.length} reward${ready.length===1?"":"s"} earned: ${money(ready.reduce((total,milestone)=>total+milestone.reward,0))}.`,type:"ok"});
+ },[game]);
+ useEffect(()=>{
+   if(!game)return;
    const claimed=new Set(game.achievements||[]);
    const ready=ACHIEVEMENTS.filter(achievement=>!claimed.has(achievement.id)&&achievement.check(game));
    if(!ready.length)return;
@@ -102,7 +121,10 @@ export default function App(){
    const cost=book.price*qty;
    if(type==="buy"&&cost>game.credits)return notify("Not enough Credits.","bad");
    if(type==="sell"&&qty>book.owned)return notify("You don't own that many.","bad");
-   setGame(g=>({...g,credits:g.credits+(type==="buy"?-cost:cost),market:{...g.market,[isStock?"stocks":"items"]:{...g.market[isStock?"stocks":"items"],[id]:{...book,owned:book.owned+(type==="buy"?qty:-qty)}}}}));
+   setGame(g=>{
+     const updated={...g,credits:g.credits+(type==="buy"?-cost:cost),market:{...g.market,[isStock?"stocks":"items"]:{...g.market[isStock?"stocks":"items"],[id]:{...book,owned:book.owned+(type==="buy"?qty:-qty)}}}};
+     return recordGoalActivity(updated,{trades:1,...(isStock&&type==="buy"?{sharesBought:qty}:{})}).game;
+   });
    notify(`${type==="buy"?"Bought":"Sold"} ${qty} ${isStock?"share(s)":"item(s)"} for ${money(cost)}.`);
  }
  function nextDay(){
@@ -133,16 +155,21 @@ export default function App(){
      return {...thread,profitSharePaid:Math.round((paid+payment)*100)/100};
    });
    if(investorCall)messages.push(investorCall);
-   const next={...current,credits:current.credits+companyResult.revenue-salary+auctions.refund-profitShareTotal,companies:companyResult.companies,day:current.day+1,market,auctions:auctions.auctions,messages,jobCooldowns:cooldowns,history:[...(current.history||[]),{day:current.day,event:result.event.name,netWorth:before}],lastDayChange:0};
+   const dayResult={...current,credits:current.credits+companyResult.revenue-salary+auctions.refund-profitShareTotal,companies:companyResult.companies,market,auctions:auctions.auctions,messages,jobCooldowns:cooldowns,history:[...(current.history||[]),{day:current.day,event:result.event.name,netWorth:before}],lastDayChange:0};
+   const goalResult=recordGoalActivity(dayResult,{companyRevenue:companyResult.revenue,auctionWins:auctions.awards.length});
+   const next={...advanceGoalPeriods(goalResult.game,current.day+1),day:current.day+1};
    next.lastDayChange=netWorth(next)-before;
    setGame(next);
-   notify(`Day ${next.day}: ${result.event.icon} ${result.event.name}${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}${salary?` · Payroll ${money(salary)}`:""}${profitShareTotal?` · Investor profit share ${money(profitShareTotal)}`:""}${auctions.refund?` · Auction refund ${money(auctions.refund)}`:""}${auctions.awards.length?` · Won ${auctions.awards.length} auction item(s)`:""}`);
+   notify(`Day ${next.day}: ${result.event.icon} ${result.event.name}${companyResult.revenue?` · Companies earned ${money(companyResult.revenue)}`:""}${salary?` · Payroll ${money(salary)}`:""}${profitShareTotal?` · Investor profit share ${money(profitShareTotal)}`:""}${auctions.refund?` · Auction refund ${money(auctions.refund)}`:""}${auctions.awards.length?` · Won ${auctions.awards.length} auction item(s)`:""}${goalResult.reward?` · Goal rewards ${money(goalResult.reward)}`:""}`);
    if(investorCall)setIncomingCall(investorCall);
  }
  function doJob(job){
    const cd=game.jobCooldowns[job.id]||0;
    if(cd>0)return notify(`${job.name} is ready in ${cd} day(s).`,"bad");
-   setGame(g=>({...g,credits:g.credits+job.reward,jobCooldowns:{...g.jobCooldowns,[job.id]:job.cooldown},jobsCompleted:{...(g.jobsCompleted||{}),[job.id]:(g.jobsCompleted?.[job.id]||0)+1}}));
+   setGame(g=>{
+     const updated={...g,credits:g.credits+job.reward,jobCooldowns:{...g.jobCooldowns,[job.id]:job.cooldown},jobsCompleted:{...(g.jobsCompleted||{}),[job.id]:(g.jobsCompleted?.[job.id]||0)+1}};
+     return recordGoalActivity(updated,{jobs:1}).game;
+   });
    notify(`${job.icon} Job complete! +${money(job.reward)}`);
  }
  function advance(){ nextDay(); }
@@ -169,6 +196,7 @@ export default function App(){
       <Nav icon={<Wallet/>} text="Portfolio" active={page==="portfolio"} onClick={()=>setPage("portfolio")}/>
       <Nav icon={<Send/>} text="Send Credits" active={page==="transfer"} onClick={()=>setPage("transfer")}/>
       <Nav icon={<BriefcaseBusiness/>} text="Jobs" active={page==="jobs"} onClick={()=>setPage("jobs")}/>
+      <Nav icon={<Target/>} text="Goals" active={page==="goals"} onClick={()=>setPage("goals")}/>
       <Nav icon={<History/>} text="History" active={page==="history"} onClick={()=>setPage("history")}/>
       <div className="sidebottom"><button onClick={()=>setPage("achievements")}><Trophy/> Achievements</button><button onClick={reset}><RefreshCw/> Reset Game</button></div>
     </aside>
@@ -183,6 +211,7 @@ export default function App(){
         {page==="messages"&&<MessagesPage game={game} setGame={setGame} notify={notify} selectedMessage={selectedMessage} setSelectedMessage={setSelectedMessage}/>}
         {page==="transfer"&&<TransferCredits game={game} user={user} setGame={setGame} notify={notify}/>} 
       {page==="jobs"&&<Jobs game={game} doJob={doJob}/>}
+      {page==="goals"&&<Goals game={game}/>}
       {page==="auctions"&&<Auctions game={game} setGame={setGame} notify={notify}/>}
       {page==="history"&&<HistoryPage game={game}/>}
       {page==="achievements"&&<Achievements game={game}/>}
@@ -256,7 +285,10 @@ function Companies({game,setGame,notify}){
  const holdings=game.companies||initialCompanies();
  function buy(company){
    if(game.credits<company.price)return notify("Not enough Credits to buy this company.","bad");
-   setGame(g=>({...g,credits:g.credits-company.price,companies:{...(g.companies||initialCompanies()),[company.id]:{...holdings[company.id],owned:true}}}));
+   setGame(g=>{
+     const updated={...g,credits:g.credits-company.price,companies:{...(g.companies||initialCompanies()),[company.id]:{...holdings[company.id],owned:true}}};
+     return recordGoalActivity(updated,{companiesBought:1}).game;
+   });
    notify(`${company.name} is now part of your empire.`);
  }
  function changeStrategy(company,strategy){setGame(g=>({...g,companies:{...(g.companies||initialCompanies()),[company.id]:{...holdings[company.id],strategy}}}));notify(`${company.name} strategy changed to ${strategy}.`)}
@@ -269,7 +301,10 @@ function Companies({game,setGame,notify}){
  function upgrade(company){
    const holding=holdings[company.id], cost=company.price*holding.level*.35;
    if(game.credits<cost)return notify("Not enough Credits for this upgrade.","bad");
-   setGame(g=>({...g,credits:g.credits-cost,companies:{...(g.companies||initialCompanies()),[company.id]:{...holdings[company.id],level:holding.level+1}}}));
+   setGame(g=>{
+     const updated={...g,credits:g.credits-cost,companies:{...(g.companies||initialCompanies()),[company.id]:{...holdings[company.id],level:holding.level+1}}};
+     return recordGoalActivity(updated,{companyUpgrades:1}).game;
+   });
    notify(`${company.name} upgraded to level ${holding.level+1}.`);
  }
  return <Page title="Company Holdings" sub="Buy the businesses behind the economy, then decide how they grow."><div className="cards three"><Stat title="Company value" value={money(companyValue(holdings))} icon="🏢"/><Stat title="Businesses owned" value={COMPANIES.filter(c=>holdings[c.id]?.owned).length} icon="🧾"/><Stat title="Operating income" value={money(COMPANIES.reduce((n,c)=>n+(holdings[c.id]?.lastRevenue||0),0))} icon="💵"/></div><div className="companygrid">{COMPANIES.map(company=>{const holding=holdings[company.id];const cost=company.price*holding.level*.35;return <div className={holding.owned?"companycard ownedcompany":"companycard"} key={company.id}><div className="companytop"><span className="companyicon">{company.icon}</span><div><h3>{company.name}</h3><small>{company.sector} · Level {holding.level}</small></div></div><p>{company.description}</p>{holding.owned?<><div className="companystats"><span>Value <b>{money(companyValue({[company.id]:holding}))}</b></span><span>Last income <b className="up">+{money(holding.lastRevenue)}</b></span><span>Invested <b>{money(holding.investment)}</b></span></div><label className="selectlabel">Operating strategy<select value={holding.strategy} onChange={e=>changeStrategy(company,e.target.value)}><option value="balanced">Balanced</option><option value="growth">Growth</option><option value="efficiency">Efficiency</option></select></label><div className="companyactions"><button className="primary" onClick={()=>invest(company)}>Invest up to 5,000 CR</button><button className="secondary" onClick={()=>upgrade(company)}>Upgrade · {money(cost)}</button></div></>:<><strong className="price">{money(company.price)}</strong><button className="primary" onClick={()=>buy(company)}>Buy company</button></>}</div>})}</div></Page>
@@ -280,7 +315,10 @@ function Workers({game,setGame,notify}){
  const analyst=workers.analyst?.hired?analystReport(game.market):null;
  function hire(worker){
    if(game.credits<worker.price)return notify("Not enough Credits to hire this worker.","bad");
-   setGame(g=>({...g,credits:g.credits-worker.price,workers:{...(g.workers||initialWorkers()),[worker.id]:{hired:true,days:0}}}));
+   setGame(g=>{
+     const updated={...g,credits:g.credits-worker.price,workers:{...(g.workers||initialWorkers()),[worker.id]:{hired:true,days:0}}};
+     return recordGoalActivity(updated,{employeeHires:1}).game;
+   });
    notify(`${worker.name} joined your empire.`);
  }
  return <Page title="Your Workforce" sub="Hire specialists who improve your empire and keep you informed."><div className="cards three"><Stat title="Workers hired" value={WORKERS.filter(worker=>workers[worker.id]?.hired).length} icon="👥"/><Stat title="Daily payroll" value={money(workerUpkeep(workers))} icon="💳"/><Stat title="Analyst status" value={workers.analyst?.hired?"Active":"Not hired"} icon="🧠"/></div>{analyst&&<section className="panel analystpanel"><SectionTitle title="Analyst Briefing" icon="🧠"/><div className="briefinggrid"><Brief title="Biggest rise" item={analyst.biggestRise.asset.name} value={analyst.biggestRise.data.change} detail="Current stock momentum"/><Brief title="Biggest crash" item={analyst.biggestCrash.asset.name} value={analyst.biggestCrash.data.change} detail="Current stock momentum"/><Brief title="Market to watch" item={analyst.strongestMarket.asset.name} value={analyst.strongestMarket.data.change} detail="Strongest resource demand"/><Brief title="Market under pressure" item={analyst.weakestMarket.asset.name} value={analyst.weakestMarket.data.change} detail="Weakest resource movement"/></div><div className="recommendation"><b>Investment call:</b> Consider {analyst.stockTip.asset.name} at {money(analyst.stockTip.data.price)}. It is {analyst.stockTip.data.change>0?"showing positive momentum":"trading below its starting price"}; review the trend before spending Credits.</div></section>}<div className="workergrid">{WORKERS.map(worker=>{const hired=workers[worker.id]?.hired;return <div className={hired?"workercard hiredworker":"workercard"} key={worker.id}><div className="companytop"><span className="companyicon">{worker.icon}</span><div><h3>{worker.name}</h3><small>{hired?"Employed · Active every day":"Available to hire"}</small></div></div><p>{worker.description}</p><div className="workerpay"><span>Hiring fee <b>{money(worker.price)}</b></span><span>Daily salary <b>{money(worker.salary)}</b></span></div>{hired?<div className="hiredbadge">✓ Working in your empire</div>:<button className="primary" onClick={()=>hire(worker)}>Hire worker</button>}</div>})}</div></Page>
@@ -332,7 +370,8 @@ function Auctions({game,setGame,notify}){
    setGame(current=>{
      const market={...current.market,items:{...current.market.items}};
      if(winsNow)market.items[auction.itemId]={...market.items[auction.itemId],owned:market.items[auction.itemId].owned+1};
-     return {...current,credits:current.credits-additional,market,auctions:current.auctions.map(item=>item.id===auction.id?{...item,current:amount,bidder:"You",playerBid:winsNow?0:amount,done:winsNow,winner:winsNow?"You":undefined,time:winsNow?0:item.time}:item)};
+     const updated={...current,credits:current.credits-additional,market,auctions:current.auctions.map(item=>item.id===auction.id?{...item,current:amount,bidder:"You",playerBid:winsNow?0:amount,done:winsNow,winner:winsNow?"You":undefined,time:winsNow?0:item.time}:item)};
+     return winsNow?recordGoalActivity(updated,{auctionWins:1}).game:updated;
    });
    setBid(current=>({...current,[auction.id]:""}));
    notify(winsNow?`Buyout complete. You won ${auction.name}.`:`Bid placed: ${money(amount)}`);
@@ -343,7 +382,8 @@ function Auctions({game,setGame,notify}){
    const additional=auction.buyout-held;
    setGame(current=>{
      const market={...current.market,items:{...current.market.items,[auction.itemId]:{...current.market.items[auction.itemId],owned:current.market.items[auction.itemId].owned+1}}};
-     return {...current,credits:current.credits-additional,market,auctions:current.auctions.map(item=>item.id===auction.id?{...item,current:auction.buyout,bidder:"You",playerBid:0,done:true,winner:"You",time:0}:item)};
+     const updated={...current,credits:current.credits-additional,market,auctions:current.auctions.map(item=>item.id===auction.id?{...item,current:auction.buyout,bidder:"You",playerBid:0,done:true,winner:"You",time:0}:item)};
+     return recordGoalActivity(updated,{auctionWins:1}).game;
    });
    notify(`Buyout complete. You won ${auction.name}.`);
  }
@@ -425,6 +465,43 @@ function InvestorCallDialog({call,onAnswer,onIgnore}){
 }
 
 function HistoryPage({game}){return <Page title="History" sub="Your recent market timeline.">{game.history.length?<div className="timeline">{game.history.slice().reverse().map((h,i)=><div className="timelineitem" key={i}><div className="dot"></div><div><small>DAY {h.day}</small><h3>{h.event}</h3><p>Recorded net worth: {money(h.netWorth)}</p></div></div>)}</div>:<Empty text="Your timeline is empty. Advance the day to generate your first market event."/ >}</Page>}
+
+function Goals({game}){
+ const contracts=currentContracts(game.day);
+ const claims=new Set(game.goalClaims||[]);
+ const milestones=new Set(game.milestones||[]);
+ const daily=contracts.filter(contract=>contract.period==="daily");
+ const weekly=contracts.filter(contract=>contract.period==="weekly");
+ const completedMilestones=MILESTONES.filter(milestone=>milestones.has(milestone.id)).length;
+ function contractCards(list){
+   return <div className="goalgrid">{list.map(contract=>{
+     const progress=goalProgress(game,contract);
+     const claimed=claims.has(contract.goalId);
+     const percent=Math.min(100,progress/contract.target*100);
+     return <article className={`goalcard${claimed?" goalcomplete":""}`} key={contract.goalId}>
+       <div className="goalheading"><b>{contract.name}</b><span>{claimed?"Complete":"In progress"}</span></div>
+       <p>{contract.description}</p>
+       <div className="goalprogress"><span style={{width:`${percent}%`}}/></div>
+       <div className="goalfooter"><small>{progress.toLocaleString()} / {contract.target.toLocaleString()}</small><strong>Reward: {money(contract.reward)}</strong></div>
+     </article>;
+   })}</div>;
+ }
+ return <Page title="Goals & Milestones" sub="Complete rotating contracts for Credits and work toward career milestones. Rewards are paid automatically when you reach each target.">
+   <section className="panel"><SectionTitle title={`Daily contracts · Day ${game.day}`} icon="☀️"/>{contractCards(daily)}</section>
+   <section className="panel"><SectionTitle title={`Weekly contracts · Week ${Math.floor((game.day-1)/7)+1}`} icon="🗓️"/>{contractCards(weekly)}</section>
+   <section className="panel"><SectionTitle title={`Career milestones · ${completedMilestones} / ${MILESTONES.length}`} icon="🏁"/><div className="goalgrid">{MILESTONES.map(milestone=>{
+     const progress=milestoneProgress(game,milestone);
+     const done=milestones.has(milestone.id);
+     const percent=Math.min(100,progress/milestone.target*100);
+     return <article className={`goalcard milestone${done?" goalcomplete":""}`} key={milestone.id}>
+       <div className="goalheading"><b>{milestone.name}</b><span>{done?"Complete":"Milestone"}</span></div>
+       <p>{milestone.description}</p>
+       <div className="goalprogress"><span style={{width:`${percent}%`}}/></div>
+       <div className="goalfooter"><small>{progress.toLocaleString()} / {milestone.target.toLocaleString()}</small><strong>Reward: {money(milestone.reward)}</strong></div>
+     </article>;
+   })}</div></section>
+ </Page>;
+}
 
 function Achievements({game}){
  const completed=new Set(game.achievements||[]);
